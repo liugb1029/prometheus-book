@@ -18,6 +18,14 @@ node_cpu{cpu="cpu0",mode="idle"} 362812.7890625
 
 Counter类型的指标其工作方式和计数器一样，只增不减（除非系统发生重置）。常见的监控指标，如http_requests_total，node_cpu都是Counter类型的监控指标。 一般在定义Counter类型指标的名称时推荐使用_total作为后缀。
 
+不要使用counter来暴露可能减少的值。例如，不要使用counter来处理当前正在运行的进程数; 而是使用gauge。
+
+客户端使用`counter`的文档：
+ - [Go](http://godoc.org/github.com/prometheus/client_golang/prometheus#Counter)
+ - [Java](https://github.com/prometheus/client_java/blob/master/simpleclient/src/main/java/io/prometheus/client/Counter.java)
+ - [Python](https://github.com/prometheus/client_python#counter)
+ - [Ruby](https://github.com/prometheus/client_ruby#counter)
+
 Counter是一个简单但有强大的工具，例如我们可以在应用程序中记录某些事件发生的次数，通过以时序的形式存储这些数据，我们可以轻松的了解该事件产生速率的变化。PromQL内置的聚合操作和函数可以用户对这些数据进行进一步的分析：
 
 例如，通过rate()函数获取HTTP请求量的增长率：
@@ -36,7 +44,7 @@ topk(10, http_requests_total)
 
 与Counter不同，Gauge类型的指标侧重于反应系统的当前状态。因此这类指标的样本数据可增可减。常见指标如：node_memory_MemFree（主机当前空闲的内容大小）、node_memory_MemAvailable（可用内存大小）都是Gauge类型的监控指标。
 
-通过Gauge指标，用户可以直接查看系统的当前状态：
+通过`Gauge`指标，用户可以直接查看系统的当前状态：
 
 ```
 node_memory_MemFree
@@ -53,6 +61,50 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 ```
 predict_linear(node_filesystem_free{job="node"}[1h], 4 * 3600)
 ```
+客户端使用`gauge`的文档：
+ - [Go](http://godoc.org/github.com/prometheus/client_golang/prometheus#Gauge)
+ - [Java](https://github.com/prometheus/client_java/blob/master/simpleclient/src/main/java/io/prometheus/client/Gauge.java)
+ - [Python](https://github.com/prometheus/client_python#gauge)
+ - [Ruby](https://github.com/prometheus/client_ruby#gauge)
+
+## Histogram(直方图/柱状图)
+*histogram*，对观察结果进行采样（通常是请求持续时间或响应大小等），并将其计入可配置存储桶中。它还提供所有观察值的总和。
+
+基本度量标准名称为`<basename>`的直方图在scrape期间显示多个时间序列：
+
+ - 样本的值分布在bucket中的数量：`<basename>_bucket{le="上边界"}`。解释的更通俗易懂一点，这个值表示指标值小于等于上边界的所有样本数量
+ - 所有样本值的总和：`<basename>_sum`
+ - 样本总数：`<basename>_count`，和`<basename>_bucket{le="+Inf"}`相同
+
+使用[`histogram_quantile()`](https://prometheus.io/docs/querying/functions/#histogram_quantile), 计算直方图或者是直方图聚合计算的分位数阈值。 `histogram`适合计算[Apdex值](http://en.wikipedia.org/wiki/Apdex), 当在`buckets`上操作时，记住`histogram`是累计的。详见[ histograms和summaries](https://prometheus.io/docs/practices/histograms)
+
+客户库的`histogram`使用文档：
+ - [Go](http://godoc.org/github.com/prometheus/client_golang/prometheus#Histogram)
+ - [Java](https://github.com/prometheus/client_java/blob/master/simpleclient/src/main/java/io/prometheus/client/Histogram.java)
+ - [Python](https://github.com/prometheus/client_python#histogram)
+ - [Ruby](https://github.com/prometheus/client_ruby#histogram)
+
+## Summary
+类似*histogram*，*summary*是采样点分位图统计(通常是请求持续时间和响应大小等)。虽然它还提供观察的总数和所有观测值的总和，但它在滑动时间窗口上计算可配置的分位数。
+
+基本度量标准名称`<basename>`的`summary`在scrape期间公开了多个时间序列：
+ - 流φ-quantiles (0 ≤ φ ≤ 1), 显示为`<basename>{quantiles="[φ]"}`
+ - `<basename>_sum`， 是指所有样本值的总和
+ - `<basename>_count`, 是指样本总数
+
+有关`φ`-分位数，`Summary`用法和`histogram`图差异的详细说明，详见[histogram和summaries](https://prometheus.io/docs/practices/histograms)
+
+有关`summaries`的客户端使用文档：
+
+ - [Go](http://godoc.org/github.com/prometheus/client_golang/prometheus#Summary)
+ - [Java](https://github.com/prometheus/client_java/blob/master/simpleclient/src/main/java/io/prometheus/client/Summary.java)
+ - [Python](https://github.com/prometheus/client_python#summary)
+ - [Ruby](https://github.com/prometheus/client_ruby#summary)
+
+## Histogram与Summary的异同
+1. 它们都包含了 <basename>_sum 和 <basename>_count 指标
+2. Histogram 需要通过 <basename>_bucket 来计算分位数，而 Summary 则直接存储了分位数的值。
+ 
 
 ## 使用Histogram和Summary分析数据分布情况
 
@@ -60,7 +112,7 @@ predict_linear(node_filesystem_free{job="node"}[1h], 4 * 3600)
 
 在大多数情况下人们都倾向于使用某些量化指标的平均值，例如CPU的平均使用率、页面的平均响应时间。这种方式的问题很明显，以系统API调用的平均响应时间为例：如果大多数API请求都维持在100ms的响应时间范围内，而个别请求的响应时间需要5s，那么就会导致某些WEB页面的响应时间落到中位数的情况，而这种现象被称为长尾问题。
 
-为了区分是平均的慢还是长尾的慢，最简单的方式就是按照请求延迟的范围进行分组。例如，统计延迟在0~10ms之间的请求数有多少而10~20ms之间的请求数又有多少。通过这种方式可以快速分析系统慢的原因。Histogram和Summary都是为了能够解决这样问题的存在，通过Histogram和Summary类型的监控指标，我们可以快速了解监控样本的分布情况。 
+为了区分是平均的慢还是长尾的慢，最简单的方式就是按照请求延迟的范围进行分组。例如，统计延迟在0-10ms之间的请求数有多少而10-20ms之间的请求数又有多少。通过这种方式可以快速分析系统慢的原因。Histogram和Summary都是为了能够解决这样问题的存在，通过Histogram和Summary类型的监控指标，我们可以快速了解监控样本的分布情况。 
 
 例如，指标prometheus_tsdb_wal_fsync_duration_seconds的指标类型为Summary。 它记录了Prometheus Server中wal_fsync处理的处理时间，通过访问Prometheus Server的/metrics地址，可以获取到以下监控样本数据：
 
