@@ -203,3 +203,125 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
    }
 }
 ```
+
+## 查询元数据
+
+### 通过标签选择器查找时间序列
+
+以下表达式返回与特定标签集匹配的时间序列列表：
+
+```bash
+GET /api/v1/series
+```
+
+URL 请求参数：
+
++ `match[]=<series_selector>` : 表示标签选择器是 `series_selector`。必须至少提供一个 `match[]` 参数。
++ `start=<rfc3339 | unix_timestamp>` : 起始时间戳。
++ `end=<rfc3339 | unix_timestamp>` : 结束时间戳。
+
+返回结果的 data 部分，是由 key-value 键值对的对象列表组成的。
+
+例如使用以下表达式查询表达式 `up` 或 `process_start_time_seconds{job="prometheus"}` 的计算结果：
+
+```json
+$ curl -g 'http://localhost:9090/api/v1/series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
+{
+   "status" : "success",
+   "data" : [
+      {
+         "__name__" : "up",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      },
+      {
+         "__name__" : "up",
+         "job" : "node",
+         "instance" : "localhost:9091"
+      },
+      {
+         "__name__" : "process_start_time_seconds",
+         "job" : "prometheus",
+         "instance" : "localhost:9090"
+      }
+   ]
+}
+```
+
+### 查询标签值
+
+下面这个例子返回了带有指定标签的的时间序列列表：
+
+```bash
+GET /api/v1/label/<label_name>/values
+```
+
+返回结果的 `data` 部分是一个标签值列表。例如，以下表达式返回结果的 data 部分是标签名称为 `job` 的所有标签值：
+
+```json
+$ curl http://localhost:9090/api/v1/label/job/values
+{
+   "status" : "success",
+   "data" : [
+      "node",
+      "prometheus"
+   ]
+}
+```
+
+## 响应数据格式
+
+表达式查询结果可能会在 data 部分的 `result` 字段中返回以下的响应值。其中 `<sample_value>` 占位符是数值样本值。由于 json 不支持特殊浮点值，例如：`NaN`, `Inf`, 和 `-Inf`，所以样本值将会作为字符串（而不是原始数值）来进行传输。
+
+### 区间向量
+
+当返回数据类型 resultType 为 `matrix` 时，`result` 响应格式如下：
+
+```json
+[
+  {
+    "metric": { "<label_name>": "<label_value>", ... },
+    "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+  },
+  ...
+]
+```
+
+其中 `metrics` 表示当前时间序列的特征维度，`values` 包含当前事件序列的一组样本。
+
+### 瞬时向量
+
+当返回数据类型 resultType 为 `vector` 时，`result` 响应格式如下：
+
+```json
+[
+  {
+    "metric": { "<label_name>": "<label_value>", ... },
+    "value": [ <unix_time>, "<sample_value>" ]
+  },
+  ...
+]
+```
+
+其中 `metrics` 表示当前时间序列的特征维度，`values` 包含当前事件序列的一组样本。
+
+### 标量
+
+当返回数据类型 resultType 为 `scalar` 时，`result` 响应格式如下：
+
+```json
+[ <unix_time>, "<scalar_value>" ]
+```
+
+由于标量不存在时间序列一说，因此 `result` 表示为当前系统时间一个标量的值。
+
+### 字符串
+
+当返回数据类型 resultType 为 `string` 时，`result` 响应格式如下：
+
+```json
+[ <unix_time>, "<string_value>" ]
+```
+
+字符串类型的响应内容格式和标量相同。
+

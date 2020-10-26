@@ -86,19 +86,24 @@ http_requests_total{code="200",handler="query_range",instance="localhost:9090",j
 2 == bool 2 # 结果为1
 ```
 
+布尔运算符规则：
+- 标量与标量之间，必须跟 bool 修饰符，因此结果只可能是 0（false） 或 1（true）。
+- 向量与标量之间，相当于把向量里的每一个标量跟标量进行比较，结果为真则保留，否则丢弃。如果后面跟了 bool 修饰符，则结果分别为 1 和 0。
+- 向量与向量之间，运算过程类似于算术类操作符，只不过如果比较结果为真则保留左边的值（包括度量指标和标签这些属性），否则丢弃，没找到匹配也是丢弃。如果后面跟了 bool 修饰符，则保留和丢弃时结果相应为 1 和 0。
+
 ## 使用集合运算符
 
 使用瞬时向量表达式能够获取到一个包含多个时间序列的集合，我们称为瞬时向量。 通过集合运算，可以在两个瞬时向量与瞬时向量之间进行相应的集合操作。目前，Prometheus支持以下集合运算符：
 
-* ```and``` (并且)
-* ```or``` (或者)
-* ```unless``` (排除)
+* ```and``` (并且)  交集
+* ```or``` (或者)  合集
+* ```unless``` (排除)  补集
 
-***vector1 and vector2*** 会产生一个由vector1的元素组成的新的向量。该向量包含vector1中完全匹配vector2中的元素组成。
+***vector1 and vector2*** 会产生一个由vector1的元素组成的新的向量。该向量包含vector1中*完全匹配（标签键值对组合相同）*vector2中的元素组成。（vector1瞬时向量中的每个样本数据与vector2向量中的所有样本数据进行标签匹配，不匹配的，全部丢弃。运算结果是保留左边的度量指标名称和值。）
 
-***vector1 or vector2*** 会产生一个新的向量，该向量包含vector1中所有的样本数据，以及vector2中没有与vector1匹配到的样本数据。
+***vector1 or vector2*** 会产生一个新的向量，该向量包含vector1中所有的样本数据，加上vector2中没有与vector1匹配（标签键值对组合相同）到的样本数据。（保留vector1向量中的每一个元素，对于vector2向量元素，则不匹配vector1向量的任何元素，则追加到结果元素中。）
 
-***vector1 unless vector2*** 会产生一个新的向量，新向量中的元素由vector1中没有与vector2匹配的元素组成。
+***vector1 unless vector2*** 会产生一个新的向量，新向量中的元素由vector1中没有与vector2匹配的元素组成。（包含在vector1中的元素，但是该元素不在vector2向量所有元素列表中，则写入到结果集中。）
 
 ## 操作符优先级
 
@@ -135,7 +140,7 @@ http_requests_total{code="200",handler="query_range",instance="localhost:9090",j
 vector1 <operator> vector2
 ```
 
-在操作符两边表达式标签不一致的情况下，可以使用on(label list)或者ignoring(label list）来修改便签的匹配行为。使用ignoreing可以在匹配时忽略某些便签。而on则用于将匹配行为限定在某些便签之内。
+在操作符两边表达式标签不一致的情况下，可以使用on(label list)或者ignoring(label list）来修改标签的匹配行为。使用ignoreing可以在匹配时忽略某些便签。而on则用于将匹配行为限定在某些便签之内。
 
 ```
 <vector expr> <bin-op> ignoring(<label list>) <vector expr>
@@ -203,5 +208,8 @@ method_code:http_errors:rate5m / ignoring(code) group_left method:http_requests:
 {method="post", code="500"} 0.05            //   6 / 120
 {method="post", code="404"} 0.175           //  21 / 120
 ```
+每种 method 的每种 code 错误次数占每种 method 请求数的比例。这里匹配的时候 ignoring 了 code，才使得两边可以形成 Many-to-one 形式的匹配。由于左边多，所以需要使用 group_left 来指明。
+
+Many-to-one / one-to-many 过于高级和复杂，要尽量避免使用。很多时候通过 ignoring 就可以解决问题。
 
 > 提醒：group修饰符只能在比较和数学运算符中使用。在逻辑运算and,unless和or才注意操作中默认与右向量中的所有元素进行匹配。

@@ -18,14 +18,11 @@
 * [第2章 探索PromQL](./promql/README.md)
   * [理解时间序列](./promql/what-is-prometheus-metrics-and-labels.md)
   * [Metrics类型](./promql/prometheus-metrics-types.md)
-    * Counter计数器
-    * Gauges仪表盘
-    * Histograms桶
-    * Summaries概要
   * [初识PromQL](./promql/prometheus-query-language.md)
   * [PromQL操作符](./promql/prometheus-promql-operators-v2.md)
   * [PromQL聚合操作](./promql/prometheus-aggr-ops.md)
   * [PromQL内置函数](./promql/prometheus-promql-functions.md)
+  * [PromQL简单示例](./promql/prometheus-simple-example.md)
   * [在HTTP API中使用PromQL](./promql/prometheus-promql-with-http-api.md)
   * [最佳实践：4个黄金指标和USE方法](./promql/prometheus-promql-best-praticase.md)
   * [小结](./promql/SUMMARY.md)

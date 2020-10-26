@@ -29,6 +29,8 @@ http_requests_total{code="200",handler="graph",instance="localhost:9090",job="pr
 
 PromQL还支持用户根据时间序列的标签匹配模式来对时间序列进行过滤，目前主要支持两种匹配模式：完全匹配和正则匹配。
 
+### 完全匹配
+
 PromQL支持使用```=```和```!=```两种完全匹配模式：
 
 * 通过使用```label=value```可以选择那些标签满足表达式定义的时间序列；
@@ -45,6 +47,8 @@ http_requests_total{instance="localhost:9090"}
 ```
 http_requests_total{instance!="localhost:9090"}
 ```
+
+### 正则匹配
 
 除了使用完全匹配的方式对时间序列进行过滤以外，PromQL还可以支持使用正则表达式作为匹配条件，多个表达式之间使用```|```进行分离：
 

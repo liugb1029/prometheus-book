@@ -80,3 +80,27 @@ type LabelName string
 
 type LabelValue string
 ```
+
+
+## 数据类型
+- 瞬时向量（Instant vector）
+- 区间向量（Range vector）
+- 标量数据 (Scalar): 一个浮点数
+- 字符串 (String): 一个字符串，暂时未用
+### 瞬时向量
+比如我们在Prometheus的查询页面输入的一个指标node_memory_MemFree_bytes进行查询，会返回五行数据：
+![](./static/Instant-vector.png)
+这五行就是五个时序，但是注意到这个五个时序数据每一个都是只有一个时刻的值。*瞬时向量（Instant vector）*类型数据是指有多个时序序列，但是每一个时序序列`只有一个时刻`的值，这种类型的数据称为*瞬时向量（Instant vector）*。
+
+### 区间向量
+比如我们在Prometheus的查询页面输入的一个一个查询语句node_memory_MemFree_bytes[1m]进行查询,会返回五行数据也就是五行时序序列，因为采集周期是15s,所以每一个时序会有4个数据，*区间向量（Range vector）*类型数据是指有个时序，每一个时序有个一个时间区间的数据，这种类型的数据成为*区间向量（Range vector）*。
+![](./static/Range-vector.png)
+
+瞬时向量对应的是某个时间点的纵轴切面，区间向量对应的就是某个时间段的纵轴切块。
+
+这个概念很重要，举例：1点CPU使用率10%，2点CPU使用率20%，3点CPU使用率30%
+
+那么瞬时向量就是1点CPU使用率10%，这个采集点的所有样本数据，区间向量就是三个小时的所有样本数据。区别就是一个代表一个采集点，一个代表某个时间段的几个采集点。
+
+
+
