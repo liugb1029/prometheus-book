@@ -120,9 +120,10 @@ probe_success 1
   - targets:
     - 127.0.0.1:9115
 ```
-
+![](./static/prometheus-blackbox-1.png)
 这里分别配置了名为baidu_http2x_probe和prometheus_http2xx_probe的采集任务，并且通过params指定使用的探针（module）以及探测目标（target）。
 
+![](./static/prometheus-blackbox-before-relabel.png)
 那问题就来了，假如我们有N个目标站点且都需要M种探测方式，那么Prometheus中将包含N * M个采集任务，从配置管理的角度来说显然是不可接受的。 在第7章的“服务发现与Relabel”小节，我们介绍了Prometheus的Relabeling能力，这里我们也可以采用Relabling的方式对这些配置进行简化，配置方式如下：
 
 ```
@@ -144,7 +145,7 @@ scrape_configs:
       - target_label: __address__
         replacement: 127.0.0.1:9115
 ```
-
+![](./static/prometheus-blackbox-after-relabel.png)
 这里针对每一个探针服务（如http_2xx）定义一个采集任务，并且直接将任务的采集目标定义为我们需要探测的站点。在采集样本数据之前通过relabel_configs对采集任务进行动态设置。 
 
 * 第1步，根据Target实例的地址，写入```__param_target```标签中。```__param_<name>```形式的标签表示，在采集任务时会在请求目标地址中添加```<name>```参数，等同于params的设置；

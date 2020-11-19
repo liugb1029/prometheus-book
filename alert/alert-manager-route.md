@@ -80,3 +80,50 @@ route:
 如果告警时来源于数据库服务如MySQL或者Cassandra，此时则需要将告警发送给相应的数据库管理员(database-pager)。这里定义了一个单独子路由，如果告警中包含service标签，并且service为MySQL或者Cassandra,则向database-pager发送告警通知，由于这里没有定义group_by等属性，这些属性的配置信息将从上级路由继承，database-pager将会接收到按cluser和alertname进行分组的告警通知。
 
 而某些告警规则来源可能来源于开发团队的定义，这些告警中通过添加标签team来标示这些告警的创建者。在Alertmanager配置文件的告警路由下，定义单独子路由用于处理这一类的告警通知，如果匹配到告警中包含标签team，并且team的值为frontend，Alertmanager将会按照标签product和environment对告警进行分组。此时如果应用出现异常，开发团队就能清楚的知道哪一个环境(environment)中的哪一个应用程序出现了问题，可以快速对应用进行问题定位。
+
+## 参数详解
+![](./static/alerting-route-argument.png)
+路由匹配规则:
+
+例子：
+```yaml
+route:
+  receiver: admin # 默认的接收器名称
+  group_wait: 30s # 在组内等待所配置的时间，如果同组内，30秒内出现相同报警，在一个组内出现。
+  group_interval: 5m # 如果组内内容不变化，5m后发送。
+  repeat_interval: 24h # 发送报警间隔，如果指定时间内没有修复，则重新发送报警
+  group_by: [alertname,cluster]  # 报警分组，根据 prometheus 的 lables 进行报警分组，这些警报会合并为一个通知发送给接收器，也就是警报分组。
+  routes:
+      - match:
+          team: ops
+        group_by: [env,dc]
+        receiver: 'ops'
+      - match_re:
+          service: nginx|apache
+        receiver: 'web'
+      - match_re:
+          service: mysql|mongodb
+        receiver: 'db'
+      - match_re:
+          service: hbase|spark
+        receiver: 'hadoop'
+```
+
+在以上的例子中，默认的警报组全部发送给 admin ，且根据路由按照 alertname cluster 进行警报分组。在子路由中的若匹配警报中的标签 team 的值为 ops，Alertmanager 会按照标签 env dc 进行警报分组然后发送给接收器 receiver ops配置的警报通知源。 继续匹配的操作是对 service 标签进行匹配，并且配到了 nginx redis mongodb 的值，就会向接收器 receiver web配置的警报通知源发送警报信息。
+
+对这种匹配验证操作很考察个人的逻辑思维能力，这不是人干的事情呀~因此，Prometheus发布了一个[Routing tree editor](https://www.prometheus.io/webtools/alerting/routing-tree-editor/)， 用于检测Alertmanager的配置文件结构配置信息，然后调试。使用方法很简单，就是把`alertmanager.yml`的配置信心复制到这个站点，然后点击`Draw Routing Tree`按钮生成路由结构树， 然后在`Match Label Set`前面输入以 {<label name> = "<value>"} 格式的警报标签，然后点击 Match Label Set 按钮会显示发送状态图。
+
+以下是通过routing tree editor生成的树结构图.
+![](static/routing-tree-1.png)
+
+然后我们可以使用 {service="nginx"} 和 {service="spark"} 表达式来做匹配的规则用于验证其发送通知源是否为 receiver 中db的发送配置。
+![](static/routing-tree-2.png)
+![](static/routing-tree-3.png)
+
+
+
+
+
+
+
+

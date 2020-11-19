@@ -58,6 +58,27 @@ Alermanager会将数据保存到本地中，默认的存储路径为`data/`。�
 
 用户也在启动Alertmanager时使用参数修改相关配置。`--config.file`用于指定alertmanager配置文件路径，`--storage.path`用于指定数据存储路径。
 
+##### Alertmanager参数
+ 参数	| 描述 
+ -|:-:|-:
+--config.file="alertmanager.yml"	| 指定Alertmanager配置文件路径
+--storage.path="data/"	| Alertmanager的数据存放目录
+--data.retention=120h	|历史数据保留时间，默认为120h
+--alerts.gc-interval=30m |	警报gc之间的间隔
+--web.external-url=WEB.EXTERNAL-URL	| 外部可访问的Alertmanager的URL(例如Alertmanager是通过nginx反向代理)
+--web.route-prefix=WEB.ROUTE-PREFIX	|web访问内部路由路径，默认是 --web.external-url
+--web.listen-address=":9093"	|监听端口，可以随意修改
+--web.get-concurrency=0|并发处理的最大GET请求数，默认为0
+--web.timeout=0	|web请求超时时间
+--cluster.listen-address="0.0.0.0:9094"	|集群的监听端口地址。设置为空字符串禁用HA模式
+--cluster.advertise-address=CLUSTER.ADVERTISE-ADDRESS	|配置集群通知地址
+--cluster.gossip-interval=200ms	|发送条消息之间的间隔，可以以增加带宽为代价更快地跨集群传播。
+--cluster.peer-timeout=15s	|在同级之间等待发送通知的时间
+...	|...
+--log.level=info	|自定义消息格式 [debug, info, warn, error]
+--log.format=logfmt	|日志消息的输出格式: [logfmt, json]
+--version	|显示版本号
+
 #### 查看运行状态
 
 Alertmanager启动后可以通过9093端口访问，[http://192.168.33.10:9093](http://192.168.33.10:9093)
@@ -79,6 +100,43 @@ alerting:
         targets: ['localhost:9093']
 ```
 
+配置模板
+```yaml
+alerting:
+  alert_relabel_configs:
+    [ - <relabel_config> ... ]
+  alertmanagers:
+    [ - <alertmanager_config> ... ]
+# alertmanagers 为 alertmanager_config 数组
+```
+配置范例：
+```yaml
+alerting:
+  alert_relabel_configs: # 动态修改 alert 属性的规则配置。
+    - source_labels: [dc] 
+      regex: (.+)\d+
+      target_label: dc1
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:9093'] # 单实例配置
+        #- targets: ['172.31.10.167:19093','172.31.10.167:29093','172.31.10.167:39093'] # 集群配置
+  - job_name: 'Alertmanager'
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+    static_configs:
+    - targets: ['localhost:19093']
+```
+上面的配置中的 alert_relabel_configs是指警报重新标记在发送到Alertmanager之前应用于警报。 它具有与目标重新标记相同的配置格式和操作，外部标签标记后应用警报重新标记，主要是针对集群配置。
+
+这个设置的用途是确保具有不同外部label的HA对Prometheus服务端发送相同的警报信息。
+
+Alertmanager 可以通过 static_configs 参数静态配置，也可以使用其中一种支持的服务发现机制动态发现，我们上面的配置是静态的单实例，针对集群HA配置，后面会讲。
+
+此外，relabel_configs 允许从发现的实体中选择 Alertmanager，并对使用的API路径提供高级修改，该路径通过 __alerts_path__ 标签公开。
+
+完成以上配置后，重启Prometheus服务，用以加载生效，也可以使用前文说过的热加载功能，使其配置生效。然后通过浏览器,就可以看 inactive pending firing 三个状态，没有警报信息是因为我们还没有配置警报规则 rules。
+
+
 重启Prometheus服务，成功后，可以从[http://192.168.33.10:9090/config](http://192.168.33.10:9090/config)查看alerting配置是否生效。
 
 此时，再次尝试手动拉高系统CPU使用率：
@@ -95,6 +153,9 @@ cat /dev/zero>/dev/null
 
 ![](./static/alertmanager-alert.png)
 
+
+
 ## 接下来
 
 目前为止，我们已经成功安装部署了Alertmanager并且与Prometheus关联，能够正常接收来自Prometheus的告警信息。接下来我们将详细介绍Alertmanager是如何处理这些接收到的告警信息的。
+

@@ -43,6 +43,18 @@ node_cpu{cpu="cpu0",env="prod",instance="localhost:9100",job="node",mode="idle"}
 
 Prometheus允许用户在采集任务设置中通过relabel_configs来添加自定义的Relabeling过程。
 
+## action字段
+可以用到的action以及对应所需的字段
+|动作	|所需字段	|介绍|
+| ---- |  ---- | ---- |  
+|replace|	regex source_labels target_label replacement|	根据正则匹配标签的值,替换标签target_label必须
+|keep	|regex source_labels	|根据正则匹配标签的值保留数据采集源
+|drop	|regex source_labels	|根据正则匹配标签的值剔除数据采集源
+|hashmod	|source_labels target_label modulus	|hash模式
+|labelmap	|regex replacement	|根据正则匹配标签的名称进行映射
+|labeldrop	|regex	|根据正则匹配标签的名称剔除标签
+|labelkeep	|regex	|根据正则匹配标签的名称保留标签
+
 ## 使用replace/labelmap重写标签
 
 Relabeling最基本的应用场景就是基于Target实例中包含的metadata标签，动态的添加或者覆盖标签。例如，通过Consul动态发现的服务实例还会包含以下Metadata标签信息：
@@ -144,10 +156,10 @@ repalce操作允许用户根据Target的Metadata标签重写或者写入新的�
 ```
 relabel_configs:
   - regex: label_should_drop_(.+)
-    action: labeldrop
+    action: drop
 ```
 
-该配置会使用regex匹配当前Target实例的所有标签，并将符合regex规则的标签从Target实例中移除。labelkeep正好相反，会移除那些不匹配regex定义的所有标签。
+该配置会使用regex匹配当前Target实例的所有标签，并将符合regex规则的标签从Target实例中移除。keep正好相反，会移除那些不匹配regex定义的所有标签。
 
 ## 使用keep/drop过滤Target实例
 
@@ -205,3 +217,139 @@ scrape_configs:
 ```
 
 这里需要注意的是，如果relabel的操作只是为了产生一个临时变量，以作为下一个relabel操作的输入，那么我们可以使用```__tmp```作为标签名的前缀，通过该前缀定义的标签就不会写入到Target或者采集到的样本的标签中。
+
+
+
+## metric_relabel_configs对拉取数据的操作
+Prometheus 从数据源拉取数据后，会对原始数据进行编辑；其中 metric_relabel_configs是 Prometheus 在保存数据前的最后一步标签重新编辑（relabel_configs）。哪怕你将 metric_relabel_configs模块放在 job_name模块的最前端，Prometheus 解析编辑文件后，也会将 metric_relabel_configs放在最后。
+
+metric_relabel_configs 模块和 relabel_config 模块很相似。metric_relabel_configs一个很常用的用途：将监控不需要的数据，直接丢掉，不在Prometheus 中保存。
+ 
+标签的重命名可以在两个阶段修改：1、重新标记来自服务发现的目标，即在scape之前 --- relabel_configs；2、scape之后但在保存到存储系统之前 --- metric_relabel_configs。
+
+### 删除不需要的metric
+#还是以cAdvisor采集的数据为例。先介绍__name__ 标签，此标签是标识指标名称的预留标签。
+
+```bash
+    metric_relabel_configs:
+    - source_labels: [ __name__ ]
+      regex: 'container_cpu_cfs_periods_total'
+      action: drop
+```
+如上面我们用不到这个指标container_cpu_cfs_periods_total，那么我们就可以不采集这个metric来节省空间了，特别强调是metric的名称而不是metric里面那些标签哦。这样你再通过：container_cpu_cfs_periods_total{job="cadvisor"}  已经查询不到数据了。
+```
+    metric_relabel_configs:
+    - source_labels: [ __name__ ]
+      regex: 'container_cpu_cfs_.*'
+      action: drop
+```
+上面就是将container_cpu_cfs开头的metric全不采集了。
+
+```
+    metric_relabel_configs:
+    - source_labels: [kubernetes_io_hostname]
+      regex: "node01"
+      action: drop
+```
+删除指标中标签为kubernetes_io_hostname，值为node01的指标
+
+
+### 修改指标(metric) 中的标签(label)
+比如有些标签是采集程序自己加上去的，我们想把这些各个程序采集的标签名改成统一的标签名也方便我们程序去做判断应该怎么弄呢？
+
+```bash
+    - source_labels: [ 'container_label_io_kubernetes_pod_name' ]
+      regex: (.+)
+      target_label: pod_name
+      replacement: $1
+      action: replace
+```
+上面就是让metric标签中的container_label_io_kubernetes_pod_name这个标签的值赋给新的标签pod_name，但是如果不等于`container_label_io_kubernetes_pod_name`，则不会处理此label。再次强调必须是==这种完全匹配关系，不然新增标签是添加不了的，就算使用了separator: ; 如果只是单标签匹配也不会给新标签赋予;这个值，另外新标签也不会出现。
+
+如果批量多条呢？
+```
+    - source_labels: [ 'container_label_io_kubernetes_pod_name' ]
+      regex: (.+)
+      target_label: pod_name
+      replacement: $1
+      action: replace
+    - source_labels: [ 'container_label_io_kubernetes_docker_type' ]
+      regex: (.+)
+      target_label: pod_type
+      replacement: $1
+      action: replace
+```
+curl -XPOST http://localhost:9090/-/reload
+
+```
+container_cpu_user_seconds_total{job="cadvisor"}
+#下面查询结果最后的一小部分：
+pod_name="kubernetes-dashboard-f9bd45cd6-6vk8n",pod_type="container"}
+```
+如果要多条合并呢？
+
+```
+    - source_labels: [ 'container_label_io_kubernetes_docker_type','container_label_io_kubernetes_container_name' ]
+      regex: (.+)
+      separator: ;
+      target_label: pod_type
+      replacement: $1
+      action: replace
+```
+
+#从上图可以看到把docker_type和container_name的值通过;分割合并到了一起。
+
+如果多条合并并不完全匹配会怎么样呢？
+```
+    - source_labels: [ 'docker_type','container_name' ]
+      regex: (.+)
+      separator: ;
+      target_label: pod_type
+      replacement: $1
+      action: replace
+```
+下面是语句查询的结果：
+
+{pod_name="kubernetes-dashboard-f9bd45cd6-6vk8n",pod_type=";"}
+
+从上面的结果可以看到直接给了一个;，因为是有值的所以给pod_type标签一个;。
+
+### 删除标签
+既然我们已经将metrics里面将老的标签里面的值赋予给了新的标签，那么是不是可以把老的标签去掉了呢？至少让我的prom界面显得简洁一点呢？
+
+首先删除单个标签：
+```
+    - regex: 'container_label_io_kubernetes_docker_type'
+      action: labeldrop
+```
+然后删除多个标签：
+```
+    - regex: 'container_label_io_kubernetes_docker_type'
+      action: labeldrop
+    - regex: '(container_label_io_kubernetes_container_logpath|container_label_io_kubernetes_container_name)'
+      action: labeldrop
+```
+然后我想正则匹配删除标签呢？
+```
+    - regex: container_label_io_kubernetes_.*
+      action: labeldrop
+```
+然后我想多个正则匹配删除多个标签呢？
+```
+    - regex: '(container_label_io_kubernetes_.*|container_label_annotation_io_kubernetes_.*)'
+      action: labeldrop
+```
+
+可以看到很多标签都删除消失了。什么时候把这些drop去掉了，再刷这些标签的值就又出现了，当然drop这段时间是没有的。
+
+action：重新标签动作
+- replace：默认，通过regex匹配source_label的值，使用replacement来引用表达式匹配的分组
+- keep：删除regex与连接不匹配的目标 source_labels
+- drop：删除regex与连接匹配的目标 source_labels
+- labeldrop：删除regex匹配的标签
+- labelkeep：删除regex不匹配的标签
+- hashmod：设置target_label为modulus连接的哈希值source_labels
+- labelmap：匹配regex所有标签名称。然后复制匹配标签的值进行分组，replacement分组引用（${1},${2},…）替代
+
+
+

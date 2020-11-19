@@ -73,7 +73,7 @@ Prometheus在`console_libraries`目录中已经内置了一些基本的界面组
 
 ![自定义菜单](./static/custom_index_head.png)
 
-无论是`.lib`文件还是`.html`文件均使用了Go Template的语言，感兴趣的读者可以自行在Go语言官网了解更多内容`https://golang.org/pkg/text/template/`
+无论是`.lib`文件还是`.html`文件均使用了Go Template的语言，感兴趣的读者可以自行在Go语言官网了解更多内容[https://golang.org/pkg/text/template/](https://golang.org/pkg/text/template/)
 
 ## 定义图表
 

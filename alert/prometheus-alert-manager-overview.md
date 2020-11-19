@@ -13,6 +13,11 @@
 Alertmanager作为一个独立的组件，负责接收并处理来自Prometheus Server(也可以是其它的客户端程序)的告警信息。Alertmanager可以对这些告警信息进行进一步的处理，比如当接收到大量重复告警时能够消除重复的告警信息，同时对告警信息进行分组并且路由到正确的通知方，Prometheus内置了对邮件，Slack等多种通知方式的支持，同时还支持与Webhook的集成，以支持更多定制化的场景。例如，目前Alertmanager还不支持钉钉，那用户完全可以通过Webhook与钉钉机器人进行集成，从而通过钉钉接收告警信息。同时AlertManager还提供了静默和告警抑制机制来对告警通知行为进行优化。
 ![Alertmanager架构](./static/alertmanager-arch.png)
 
+
+在Prometheus生态架构里，警报是由独立的俩部分组成，可以通过上图很清晰的了解到 Prometheus 的警报工作机制。其中 Prometheus 与 Alertmanager 是分离的俩个组件。我们使用Prometheus Server端通过静态或者动态配置 去拉取 pull 部署在k8s或云主机上的各种类别的监控指标数据，然后基于我们前面讲到的 PromQL 对这些已经存储在本地存储 HDD/SSD 的 TSDB 中的指标定义阈值警报规则 Rules 。Prometheus会根据配置的参数周期性的对警报规则进行计算， 如果满足警报条件，生产一条警报信息，将其推送到 Alertmanager 组件，Alertmanager 收到警报信息之后，会对警告信息进行处理，进行 分组 Group 并将它们通过定义好的路由 Routing 规则转到 正确的接收器 receiver， 比如 Email Slack 钉钉、企业微信 Robot（webhook） 企业微信 等，最终异常事件 Warning、Error通知给定义好的接收人，其中如钉钉是基于第三方通知来实现的，对于通知人定义是在钉钉的第三方组件中配置。
+
+在 Prometheus 中， 我们不仅仅可以对单条警报进行命名通过 PromQL定义规则，更多时候是对相关的多条警报进行分组后统一定义。这些定义会在后面说明与其管理方法。下面开始把 Alertmanager 中的分组 Grouping 、抑制 Inhibition、延迟 Silences 核心特性进行介绍，便于大家系统性的学习与理解。
+
 ## Alertmanager特性
 
 Alertmanager除了提供基本的告警通知能力以外，还主要提供了如：分组、抑制以及静默等告警特性：

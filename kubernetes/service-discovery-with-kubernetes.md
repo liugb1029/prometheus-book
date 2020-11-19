@@ -22,6 +22,7 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups:
   - extensions
+  - networking.k8s.io
   resources:
   - ingresses
   verbs: ["get", "list", "watch"]
@@ -60,15 +61,59 @@ clusterrolebinding "prometheus" created
 在完成角色权限以及用户的绑定之后，就可以指定Prometheus使用特定的ServiceAccount创建Pod实例。修改prometheus-deployment.yml文件，并添加serviceAccountName和serviceAccount定义：
 
 ```
+apiVersion: v1
+kind: "Service"
+metadata:
+  name: prometheus
+  labels:
+    name: prometheus
+spec:
+  ports:
+  - name: prometheus
+    protocol: TCP
+    port: 9090
+    targetPort: 9090
+  selector:
+    app: prometheus
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    name: prometheus
+  name: prometheus
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
   template:
     metadata:
       labels:
         app: prometheus
     spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.20.0
+        command:
+        - "/bin/prometheus"
+        args:
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--web.enable-lifecycle"
+        - "--log.level=debug"
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+        volumeMounts:
+        - mountPath: "/etc/prometheus"
+          name: prometheus-config
       serviceAccountName: prometheus
       serviceAccount: prometheus
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
 ```
 
 通过kubectl apply对Deployment进行变更升级：
@@ -126,6 +171,17 @@ data:
       scrape_interval:     15s 
       evaluation_interval: 15s
     scrape_configs:
+    - job_name: 'kubernetes-kubelet'
+      scheme: https
+      tls_config:
+        ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      kubernetes_sd_configs:
+      - role: node
+      relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
 
     - job_name: 'kubernetes-nodes'
       tls_config:

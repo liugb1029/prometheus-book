@@ -36,11 +36,46 @@ Kubelet组件运行在Kubernetes集群的各个节点中，其负责维护和管
 ```
 
 这里使用Node模式自动发现集群中所有Kubelet作为监控的数据采集目标，同时通过labelmap步骤，将Node节点上的标签，作为样本的标签保存到时间序列当中。
+要注意需要使用 https 的协议，而且有一个经常遇到的问题是访问metrics接口的时候出现403错误,遇到这种情况需要确保 kubelet 开启了下面两个参数：
+```
+--authentication-token-webhook --authorization-mode=Webhook
+```
 
 重新加载promethues配置文件，并重建Promthues的Pod实例后，查看kubernetes-kubelet任务采集状态，我们会看到以下错误提示信息：
 
 ```
 Get https://192.168.99.100:10250/metrics: x509: cannot validate certificate for 192.168.99.100 because it doesn't contain any IP SANs
+```
+可以通过curl请求测试metrics接口是否能正常获取到监控
+```bash
+# TOKEN就是prometheus容器中/var/run/secrets/kubernetes.io/serviceaccount/token
+[root@master prometheus]# curl -k https://192.168.56.100:10250/metrics --header "Authorization: Bearer $TOKEN" --cacert ca.crt
+# HELP apiserver_audit_event_total [ALPHA] Counter of audit events generated and sent to the audit backend.
+# TYPE apiserver_audit_event_total counter
+apiserver_audit_event_total 0
+# HELP apiserver_audit_requests_rejected_total [ALPHA] Counter of apiserver requests rejected due to an error in audit logging backend.
+# TYPE apiserver_audit_requests_rejected_total counter
+apiserver_audit_requests_rejected_total 0
+# HELP apiserver_client_certificate_expiration_seconds [ALPHA] Distribution of the remaining lifetime on the certificate used to authenticate a request.
+# TYPE apiserver_client_certificate_expiration_seconds histogram
+apiserver_client_certificate_expiration_seconds_bucket{le="0"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="1800"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="3600"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="7200"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="21600"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="43200"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="86400"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="172800"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="345600"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="604800"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="2.592e+06"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="7.776e+06"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="1.5552e+07"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="3.1104e+07"} 0
+apiserver_client_certificate_expiration_seconds_bucket{le="+Inf"} 0
+apiserver_client_certificate_expiration_seconds_sum 0
+apiserver_client_certificate_expiration_seconds_count 0
+......
 ```
 
 这是由于当前使用的ca证书中，并不包含192.168.99.100的地址信息。为了解决该问题，第一种方法是直接跳过ca证书校验过程，通过在tls_config中设置
@@ -61,6 +96,53 @@ insecure_skip_verify为true即可。 这样Promthues在采集样本数据时，�
 ```
 
 ![直接采集kubelet监控指标](./static/kubernetes-kubelets-step2.png)
+kubernetes原始标签信息如下：
+```
+Before relabeling:
+__address__="192.168.56.100:10250"
+__meta_kubernetes_node_address_Hostname="master"
+__meta_kubernetes_node_address_InternalIP="192.168.56.100"
+__meta_kubernetes_node_annotation_flannel_alpha_coreos_com_backend_data="{"VtepMAC";"62:7a:5d:b3:73:f1"}"
+__meta_kubernetes_node_annotation_flannel_alpha_coreos_com_backend_type="vxlan"
+__meta_kubernetes_node_annotation_flannel_alpha_coreos_com_kube_subnet_manager="true"
+__meta_kubernetes_node_annotation_flannel_alpha_coreos_com_public_ip="192.168.56.100"
+__meta_kubernetes_node_annotation_kubeadm_alpha_kubernetes_io_cri_socket="/var/run/dockershim.sock"
+__meta_kubernetes_node_annotation_node_alpha_kubernetes_io_ttl="0"
+__meta_kubernetes_node_annotation_volumes_kubernetes_io_controller_managed_attach_detach="true"
+__meta_kubernetes_node_annotationpresent_flannel_alpha_coreos_com_backend_data="true"
+__meta_kubernetes_node_annotationpresent_flannel_alpha_coreos_com_backend_type="true"
+__meta_kubernetes_node_annotationpresent_flannel_alpha_coreos_com_kube_subnet_manager="true"
+__meta_kubernetes_node_annotationpresent_flannel_alpha_coreos_com_public_ip="true"
+__meta_kubernetes_node_annotationpresent_kubeadm_alpha_kubernetes_io_cri_socket="true"
+__meta_kubernetes_node_annotationpresent_node_alpha_kubernetes_io_ttl="true"
+__meta_kubernetes_node_annotationpresent_volumes_kubernetes_io_controller_managed_attach_detach="true"
+__meta_kubernetes_node_label_beta_kubernetes_io_arch="amd64"
+__meta_kubernetes_node_label_beta_kubernetes_io_os="linux"
+__meta_kubernetes_node_label_kubernetes_io_arch="amd64"
+__meta_kubernetes_node_label_kubernetes_io_hostname="master"
+__meta_kubernetes_node_label_kubernetes_io_os="linux"
+__meta_kubernetes_node_labelpresent_beta_kubernetes_io_arch="true"
+__meta_kubernetes_node_labelpresent_beta_kubernetes_io_os="true"
+__meta_kubernetes_node_labelpresent_kubernetes_io_arch="true"
+__meta_kubernetes_node_labelpresent_kubernetes_io_hostname="true"
+__meta_kubernetes_node_labelpresent_kubernetes_io_os="true"
+__meta_kubernetes_node_labelpresent_node_role_kubernetes_io_master="true"
+__meta_kubernetes_node_name="master"
+__metrics_path__="/metrics"
+__scheme__="https"
+instance="master"
+job="kubernetes-kubelet"
+```
+kubernetes-kubelet中的relabel_config规则正则表达式`__meta_kubernetes_node_label_(.+)`找到匹配`__meta_kubernetes_node_label_`的后面标签作为新的label,例如可以匹配得到下面的内容
+```
+beta_kubernetes_io_arch="amd64"
+beta_kubernetes_io_os="linux"
+kubernetes_io_arch="amd64"
+kubernetes_io_hostname="master"
+kubernetes_io_os="linux"
+```
+其中`instance="master"`和`job="kubernetes-kubelet"`直接保留不变显示在页面上label。
+![](static/kubernetes-kubelet-node-relabel.png)
 
 第二种方式，不直接通过kubelet的metrics服务采集监控数据，而通过Kubernetes的api-server提供的代理API访问各个节点中kubelet的metrics服务，如下所示：
 
@@ -69,6 +151,7 @@ insecure_skip_verify为true即可。 这样Promthues在采集样本数据时，�
       scheme: https
       tls_config:
         ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
       kubernetes_sd_configs:
       - role: node
@@ -86,6 +169,7 @@ insecure_skip_verify为true即可。 这样Promthues在采集样本数据时，�
 通过relabeling，将从Kubernetes获取到的默认地址```__address__```替换为kubernetes.default.svc:443。同时将```__metrics_path__```替换为api-server的代理地址/api/v1/nodes/${1}/proxy/metrics。
 
 ![通过api-server代理获取kubelet监控指标](./static/kubernetes-kubelets-step3.png)
+![](./static/kubernetes-node-apiserver.png)
 
 通过获取各个节点中kubelet的监控指标，用户可以评估集群中各节点的性能表现。例如,通过指标kubelet_pod_start_latency_microseconds可以获得当前节点中Pod启动时间相关的统计数据。
 
@@ -116,6 +200,7 @@ kubelet_pod_start_latency_microseconds_sum / kubelet_pod_start_latency_microseco
       scheme: https
       tls_config:
         ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        insecure_skip_verify: true
       bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
       kubernetes_sd_configs:
       - role: node
@@ -147,12 +232,67 @@ kubelet_pod_start_latency_microseconds_sum / kubelet_pod_start_latency_microseco
       - source_labels: [__meta_kubernetes_node_name]
         regex: (.+)
         target_label: __metrics_path__
-        replacement: metrics/cadvisor
+        replacement: /metrics/cadvisor
       - action: labelmap
         regex: __meta_kubernetes_node_label_(.+)
 ```
 
 ![直接访问kubelet](./static/prometheus-cadvisor-step2.png)
+
+下面表格中列举了一些CAdvisor中获取到的典型监控指标：
+
+```
+container_cpu_load_average_10s  #gauge类型，过去10秒容器CPU的平均负载
+container_cpu_usage_seconds_total  #counter类型，容器在每个CPU内核上的累积占用时间 (单位：秒)
+container_cpu_system_seconds_total  #counter类型，System CPU累积占用时间（单位：秒）
+container_cpu_user_seconds_total  #counter类型，User CPU累积占用时间（单位：秒）
+container_fs_usage_bytes  #gauge类型，容器中文件系统的使用量(单位：字节)
+container_fs_limit_bytes  #gauge类型，容器可以使用的文件系统总量(单位：字节)
+container_fs_reads_bytes_total  #counter类型，容器累积读取数据的总量(单位：字节)
+container_fs_writes_bytes_total  #counter类型，容器累积写入数据的总量(单位：字节)
+container_memory_max_usage_bytes  #gauge类型，容器的最大内存使用量（单位：字节）
+container_memory_usage_bytes  #gauge类型，容器当前的内存使用量（单位：字节）
+container_spec_memory_limit_bytes  #gauge类型，容器的内存使用量限制
+machine_memory_bytes  #gauge类型，当前主机的内存总量
+container_network_receive_bytes_total  #counter类型，容器网络累积接收数据总量（单位：字节）
+container_network_transmit_bytes_total  #counter类型，容器网络累积传输数据总量（单位：字节）
+```
+
+注意：
+
+```
+从 v1.7 开始，Kubelet metrics API 不再包含 cadvisor metrics，而是提供了一个独立的 API 接口：
+  Kubelet metrics: http://127.0.0.1:8001/api/v1/proxy/nodes/<node-name>/metrics
+  Cadvisor metrics: http://127.0.0.1:8001/api/v1/proxy/nodes/<node-name>/metrics/cadvisor
+cadvisor 监听的端口将在 v1.12 中删除，建议所有外部工具使用 Kubelet Metrics API 替代。
+```
+Kubernetes 社区提供了一些列的工具来监控容器和集群的状态，并借助 Prometheus 提供告警的功能：
+
+
+```
+cAdvisor  #负责单节点内部的容器和节点资源使用统计，内置在 Kubelet 内部，并通过 Kubelet /metrics/cadvisor 对外提供 API
+InfluxDB  #是一个开源分布式时序、事件和指标数据库；而 Grafana 则是 InfluxDB 的 Dashboard，提供了强大的图表展示功能。它们常被组合使用展示图表化的监控数据。
+metrics-server #提供了整个集群的资源监控数据，但要注意
+  Metrics API 只可以查询当前的度量数据，并不保存历史数据
+  Metrics API URI 为 /apis/metrics.k8s.io/，在 k8s.io/metrics 维护
+  必须部署 metrics-server 才能使用该 API，metrics-server 通过调用 Kubelet Summary API 获取数据
+kube-state-metrics 提供了 Kubernetes 资源对象（如 DaemonSet、Deployments 等）的度量。
+Prometheus 是另外一个监控和时间序列数据库，还提供了告警的功能。
+Node Problem Detector 监测 Node 本身的硬件、内核或者运行时等问题。
+Heapster提供了整个集群的资源监控，并支持持久化数据存储到 InfluxDB 等后端存储中（已弃用）
+```
+除了以上监控工具，还有很多其他的开源或商业系统可用来辅助监控，如Sysdig，Weave scope，Datadog，Sematext
+
+去掉一些没用的标签：
+```yaml
+  - job_name: cadvisor
+    metrics_path: '/metrics'   #指定url的path当然默认也是这个
+    static_configs:
+     - targets: ['192.168.1.137:8080']
+    metric_relabel_configs:
+    - regex: '(container_label_annotation_io_kubernetes_container_hash|container_label_annotation_io_kubernetes_container_ports|container_label_annotation_io_kubernetes_container_restartCount|container_label_annotation_io_kubernetes_container_terminationMessagePath|container_label_annotation_io_kubernetes_container_terminationMessagePolicy|container_label_annotation_io_kubernetes_pod_terminationGracePeriod|container_label_io_kubernetes_container_logpath|container_label_io_kubernetes_pod_uid|container_label_io_kubernetes_sandbox_id|container_label_controller_revision_hash)'
+      action: labeldrop
+```
 
 ## 使用NodeExporter监控集群资源使用情况
 
@@ -160,32 +300,56 @@ kubelet_pod_start_latency_microseconds_sum / kubelet_pod_start_latency_microseco
 
 创建node-exporter-daemonset.yml文件，并写入以下内容：
 
-```
-apiVersion: extensions/v1beta1
+```yaml
+apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: node-exporter
+  name: node-exporter-daemonset
+  namespace: kube-system
 spec:
+  selector:
+    matchLabels:
+      app: node-exporter
   template:
     metadata:
       annotations:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '9100'
-        prometheus.io/path: 'metrics'
+        prometheus.io/path: '/metrics'
       labels:
         app: node-exporter
       name: node-exporter
     spec:
-      containers:
-      - image: prom/node-exporter
-        imagePullPolicy: IfNotPresent
-        name: node-exporter
-        ports:
-        - containerPort: 9100
-          hostPort: 9100
-          name: scrape
       hostNetwork: true
-      hostPID: true
+      containers:
+      - name: node-exporter
+        image: prom/node-exporter:v0.18.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - /bin/node_exporter
+        - --path.procfs
+        - /host/proc
+        - --path.sysfs
+        - /host/sys
+        - --collector.filesystem.ignored-mount-points
+        - ^/(sys|proc|dev|host|etc)($|/)
+        volumeMounts:
+        - name: proc
+          mountPath: /host/proc
+        - name: sys
+          mountPath: /host/sys
+        - name: root
+          mountPath: /rootfs
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: root
+        hostPath:
+          path: /
 ```
 
 由于Node Exporter需要能够访问宿主机，因此这里指定了hostNetwork和hostPID，让Pod实例能够以主机网络以及系统进程的形式运行。同时YAML文件中也创建了NodeExporter相应的Service。这样通过Service就可以访问到对应的NodeExporter实例。
@@ -238,7 +402,7 @@ prometheus.io/port: '9100'
 而有些情况下，Pod中的容器可能并没有使用默认的/metrics作为监控采集路径，因此还需要支持用户指定采集路径：
 
 ```
-prometheus.io/path: 'metrics'
+prometheus.io/path: '/metrics'
 ```
 
 为Prometheus创建监控采集任务kubernetes-pods，如下所示：
@@ -303,7 +467,7 @@ kubernetes   10.0.2.15:8443   166d
 
 因此，如果我们想要监控kube-apiserver相关的指标，只需要通过endpoints资源找到kubernetes对应的所有后端地址即可。
 
-如下所示，创建监控任务kubernetes-apiservers，这里指定了服务发现模式为endpoints。Promtheus会查找当前集群中所有的endpoints配置，并通过relabel进行判断是否为apiserver对应的访问地址：
+如下所示，创建监控任务kubernetes-apiservers，这里指定了服务发现模式为endpoints。Prometheus会查找当前集群中所有的endpoints配置，并通过relabel进行判断是否为apiserver对应的访问地址：
 
 ```
     - job_name: 'kubernetes-apiservers'
@@ -443,7 +607,7 @@ blackbox-exporter           ClusterIP   10.109.144.192   <none>        9115/TCP 
       - source_labels: [__meta_kubernetes_service_name]
         target_label: kubernetes_name
 ```
-
+![](./static/kubernetes-service-probe.png)
 对于Ingress而言，也是一个相对类似的过程，这里给出对Ingress探测的Promthues任务配置作为参考：
 
 ```
@@ -472,3 +636,4 @@ blackbox-exporter           ClusterIP   10.109.144.192   <none>        9115/TCP 
       - source_labels: [__meta_kubernetes_ingress_name]
         target_label: kubernetes_name
 ```
+

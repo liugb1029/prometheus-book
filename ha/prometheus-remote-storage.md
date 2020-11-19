@@ -22,9 +22,9 @@ Prometheus的本地存储设计可以减少其自身运维和管理的复杂度�
 
 ### 配置文件
 
-Prometheus配置文件中添加remote_write和remote_read配置，其中url用于指定远程读/写的HTTP服务地址。如果该URL启动了认证则可以通过basic_auth进行安全认证配置。对于https的支持需要设定tls_concig。proxy_url主要用于Prometheus无法直接访问适配器服务的情况下。
+Prometheus配置文件中添加remote_write和remote_read配置，其中url用于指定远程读/写的HTTP服务地址。如果该URL启动了认证则可以通过basic_auth进行安全认证配置。对于https的支持需要设定tls_config。proxy_url主要用于Prometheus无法直接访问适配器服务的情况下。
 
-remote_write和remote_write具体配置如下所示：
+remote_write和remote_read具体配置如下所示：
 
 ```
 remote_write:
@@ -254,4 +254,4 @@ go_memstats_heap_idle_bytes
 
 当数据写入成功后，停止Prometheus服务。同时删除Prometheus的data目录，模拟Promthues数据丢失的情况后重启Prometheus。打开Prometheus UI如果配置正常，Prometheus可以正常查询到本地存储以删除的历史数据记录。
 
-![从Remote Storage获取历史数据](./static/promethues-remote-storage.png)
+![从Remote Storage获取历史数据](./static/prometheus-remote-storage.png)

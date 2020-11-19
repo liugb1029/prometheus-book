@@ -1,6 +1,6 @@
 # 内置告警接收器Receiver
 
-前上一小节已经讲过，在Alertmanager中路由负责对告警信息进行分组匹配，并将像告警接收器发送通知。告警接收器可以通过以下形式进行配置：
+前上一小节已经讲过，在Alertmanager中路由负责对告警信息进行分组匹配，并将向告警接收器发送通知。告警接收器可以通过以下形式进行配置：
 
 ```
 receivers:
@@ -30,4 +30,11 @@ victorops_configs:
 ```
 
 目前官方内置的第三方通知集成包括：邮件、 即时通讯软件（如Slack、Hipchat）、移动应用消息推送(如Pushover)和自动化运维工具（例如：Pagerduty、Opsgenie、Victorops）。Alertmanager的通知方式中还可以支持Webhook，通过这种方式开发者可以实现更多个性化的扩展支持。
+[官方receiver配置](https://prometheus.io/docs/alerting/latest/configuration/#receiver)
+
+推荐使用webhook配置
+- [https://prometheus.io/docs/alerting/latest/configuration/#webhook_config](https://prometheus.io/docs/alerting/latest/configuration/#webhook_config)
+- [https://prometheus.io/docs/operating/integrations/#alertmanager-webhook-receiver](https://prometheus.io/docs/operating/integrations/#alertmanager-webhook-receiver)
+
+
 

@@ -57,7 +57,25 @@ labels:
   [ <labelname>: <labelvalue> ]
 ```
 
-根据规则中的定义，Prometheus会在后台完成expr中定义的PromQL表达式计算，并且将计算结果保存到新的时间序列record中。同时还可以通过labels为这些样本添加额外的标签。
+在配置的时候，除却 record: <string> 需要注意，其他的基本上是一样的，一个 groups 下可以包含多条规则 rules ，记录和警报规则保存在规则组内，组中的规则以规则的配置时间间隔顺序运算，也就是全局中的 evaluation_interval 设置。
+
+配置范例：
+```yaml
+groups:
+- name: http_requests_total
+  rules:
+  - record: job:http_requests_total:rate10m
+    expr: sum by (job)(rate(http_requests_total[10m]))
+    lables:
+      team: operations
+  - record: job:http_requests_total:rate30m
+    expr: sum by (job)(rate(http_requests_total[30m]))
+    lables:
+      team: operations  
+```           
+上面的规则其实就是根据record规则中的定义，Prometheus 会在后台完成 expr 中定义的 PromQL 表达式计算过去的指标，以job为维度使用sum聚合运算符计算 http_requests_total 10m内的请求量，并且将计算结果保存到新的时间序列`job:http_requests_total:rate10m`中， 同时还可以通过`labels`为样本数据添加额外的自定义标签。
+
+根据规则中的定义，Prometheus会在后台完成expr中定义的PromQL表达式计算，并且将计算结果保存到新的时间序列`record`中。同时还可以通过labels为这些样本添加额外的标签。
 
 这些规则文件的计算频率与告警规则计算频率一致，都通过global.evaluation_interval定义:
 
@@ -65,3 +83,5 @@ labels:
 global:
   [ evaluation_interval: <duration> | default = 1m ]
 ```
+
+

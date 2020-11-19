@@ -10,7 +10,7 @@ Prometheus的本地存储给Prometheus带来了简单高效的使用体验，可
 
 由于Promthues的Pull机制的设计，为了确保Promthues服务的可用性，用户只需要部署多套Prometheus Server实例，并且采集相同的Exporter目标即可。
 
-![基本HA](./static/promethues-ha-01.png)
+![基本HA](./static/prometheus-ha-01.png)
 
 基本的HA模式只能确保Promthues服务的可用性问题，但是不解决Prometheus Server之间的数据一致性问题以及持久化问题(数据丢失后无法恢复)，也无法进行动态的扩展。因此这种部署方式适合监控规模不大，Promthues Server也不会频繁发生迁移的情况，并且只需要保存短周期监控数据的场景。
 
@@ -42,7 +42,7 @@ Prometheus的本地存储给Prometheus带来了简单高效的使用体验，可
 
 这时在考虑另外一种极端情况，即单个采集任务的Target数也变得非常巨大。这时简单通过联邦集群进行功能分区，Prometheus Server也无法有效处理时。这种情况只能考虑继续在实例级别进行功能划分。
 
-![实例级别功能分区](./static/promethues-sharding-targets.png)
+![实例级别功能分区](./static/prometheus-sharding-targets.png)
 
 如上图所示，将统一任务的不同实例的监控数据采集任务划分到不同的Prometheus实例。通过relabel设置，我们可以确保当前Prometheus Server只收集当前采集任务的一部分实例的监控指标。
 
